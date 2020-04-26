@@ -1,4 +1,4 @@
-# PYTHONPATH='.' AWS_PROFILE=educate1 luigi --module alter_orq downloadDataS3 --local-scheduler
+# PYTHONPATH='.' AWS_PROFILE=dpa luigi --module alter_orq GetFEData --local-scheduler
 
 ###  Librerias necesarias
 import luigi
@@ -16,6 +16,9 @@ import pandas as pd
 import psycopg2
 from psycopg2 import extras
 from zipfile import ZipFile
+###librerias para clean
+from pyspark.sql import SparkSession
+from src.features.build_features import clean, crear_features, init_data_luigi, init_data_clean_luigi
 
 ###  Imports desde directorio de proyecto dpa_rita
 ## Credenciales
@@ -31,7 +34,7 @@ MY_DB,
 from utils.s3_utils import create_bucket
 from utils.db_utils import create_db, execute_sql
 from utils.ec2_utils import create_ec2
-from utils.metadatos_utils import EL_verif_query, EL_metadata, Linaje_raw
+from utils.metadatos_utils import EL_verif_query, EL_metadata, Linaje_raw, Linaje_semantic, semantic_metadata
 
 
 # Inicializa la clase que reune los metadatos
@@ -39,10 +42,10 @@ MiLinaje = Linaje_raw() # extract y load
 
 # Tasks de Luigi
 
-class Create_Tables_Schemas(PostgresQuery):
-    '''
-    Creamos esquemas y tablas para metadatos, asi como raw, clean y semantic
-    '''
+class Create_Tables_Schemas(luigi.Task):
+    # '''
+    #Creamos esquemas y tablas para metadatos, asi como raw, clean y semantic
+    # '''
     # Sobreescribe credenciales de constructor de task
     user = MY_USER
     password = MY_PASS
@@ -50,14 +53,31 @@ class Create_Tables_Schemas(PostgresQuery):
     host = MY_HOST
     table = "metadatos"
 
+    def requires(self):
+        return None
+  
     # Lee query y lo ejecuta
-    file_dir = "./src/utils/sql/crear_tablas.sql"
-    query = open(file_dir, "r").read()
-
+    def run(self):
+        file_dir = "./utils/sql/crear_tablas.sql"
+        query = open(file_dir, "r").read()
+        config_psyco = "host='{0}' dbname='{1}' user='{2}' password='{3}'".format(MY_HOST,MY_DB,MY_USER,MY_PASS)
+        connection = psycopg2.connect(config_psyco)
+        cursor = connection.cursor()
+        cursor.execute(query)
+        cursor.close()
+        connection.close()
+        os.system('echo OK > Tarea_Esquemas.txt')
+        # creates a local file as output
+    
+    def output(self):
+        # Ruta en donde se guarda el archivo solicitado
+        output_path = "Tarea_Esquemas.txt"
+        return luigi.LocalTarget(output_path)
+   
 
 class downloadDataS3(luigi.Task):
 
-    def requires():
+    def requires(self):
         return Create_Tables_Schemas()
 
     #Definimos los URL base para poder actualizarlo automaticamente despues
@@ -155,28 +175,6 @@ class downloadDataS3(luigi.Task):
         output_path = "Tarea_EL.txt"
         return luigi.LocalTarget(output_path)
 
-
-class Create_RitaLight(PostgresQuery):
-    '''
-    Creamos esquemas y tablas para metadatos, asi como raw, clean y semantic
-    '''
-
-    def requires():
-        return downloadDataS3()
-
-    # Sobreescribe credenciales de constructor de task
-    user = MY_USER
-    password = MY_PASS
-    database = MY_DB
-    host = MY_HOST
-    table = "metadatos"
-
-    # Lee query y lo ejecuta
-    file_dir = "./src/utils/sql/crear_ritalight.sql"
-    query = open(file_dir, "r").read()
-
-
-
 # Preparamamos una clase para reunir los metadatos de la etapa de limpieza de datos
 class Linaje_clean_data():
     def __init__(self, fecha=0, nombre_task=0,year=0, month=0, usuario=0, ip_clean=0, num_filas_modificadas=0, variables_limpias=0, task_status=0):
@@ -194,23 +192,137 @@ class Linaje_clean_data():
         return (self.fecha, self.nombre_task, self.year, self.month, self.usuario,\
          self.ip_clean, self.num_filas_modificadas, self.variables_limpias,\
           self.task_status)
+    
+#-----------------------------------------------------------------------------------------------------------------------------
+# Limpiar DATOS 
+CURRENT_DIR = os.getcwd()
 
-# Preparamamos una clase para reunir los metadatos de la etapa Raw
-class Linaje_feature_engineering():
-    def __init__(self, url = 0, fecha=0, year=0, month=0, usuario=0, ip_ec2=0, filas_modificadas=0, variables=0, ruta_s3=0,task_status=0):
-        self.url = url
+class DataLocalStorage():
+    def __init__(self, df_clean= None):
+        self.df_clean =df_clean
+
+    def get_data(self):
+        return self.df_clean
+
+CACHE = DataLocalStorage()
+
+#Obtenemos raw.rita de la RDS
+class GetDataSet(luigi.Task):
+
+    def requires(self):
+        return  downloadDataS3()
+    
+    def output(self):
+        dir = CURRENT_DIR + "/target/gets_data.txt"
+        return luigi.local_target.LocalTarget(dir)
+
+    def run(self):
+        df_clean = init_data_luigi()
+        CACHE.df_clean = df_clean
+
+        z = "Obtiene Datos"
+        with self.output().open('w') as output_file:
+            output_file.write(z)
+#Limpiamos los datos            
+class GetCleanData(luigi.Task):
+    
+    def requires(self):
+        return GetDataSet()
+
+    def output(self):
+        dir = CURRENT_DIR + "/target/data_clean.txt"
+        return luigi.local_target.LocalTarget(dir)
+
+    def run(self):
+        df_clean = init_data_luigi()#CACHE.get_data()
+        CACHE.df_clean = clean(df_clean)
+        
+        z = "Limpia Datos"
+        with self.output().open('w') as output_file:
+            output_file.write(z)
+    
+# Preparamamos una clase para reunir los metadatos de la etapa de limpieza de datos
+class Linaje_clean_data():
+    def __init__(self, fecha=0, nombre_task=0,year=0, month=0, usuario=0, ip_clean=0, num_filas_modificadas=0, variables_limpias=0, task_status=0):
         self.fecha = fecha # time stamp
         self.nombre_task = self.__class__.__name__#nombre_task
-        self.year = year #
-        self.month = month #
+        self.year = year #año de los datos
+        self.month = month #    mes de los datos
         self.usuario = usuario # Usuario de la maquina de GNU/Linux que corre la instancia
-        self.ip_ec2 = ip_ec2
-        self.filas_modificadas = filas_modificadas
-        self.variables = variables
-        self.ruta_s3= ruta_s3
-        self.task_status= task_status
+        self.ip_clean = ip_clean #Corresponde a la dirección IP desde donde se ejecuto la tarea
+        self.num_filas_modificadas = num_filas_modificadas #    número de registros modificados
+        self.variables_limpias = variables_limpias #variables limpias con las que se pasará a la siguiente parte
+        self.task_status= task_status # estatus de ejecución: Fallido, exitoso, etc.
 
     def to_upsert(self):
         return (self.fecha, self.nombre_task, self.year, self.month, self.usuario,\
-         self.ip_ec2, self.filas_modificadas, self.variables, self.ruta_s3,\
+         self.ip_clean, self.num_filas_modificadas, self.variables_limpias,\
           self.task_status)
+#-----------------------------------------------------------------------------------------------------------------------------   
+#FEATURE ENGINERING------------------------------------------------------------------------------------------------------------
+# Crear caracteristicas DATOS 
+CURRENT_DIR = os.getcwd()
+
+class DataCleanLocalStorage():
+    def __init__(self, df_semantic= None):
+        self.df_semantic =df_semantic
+
+    def get_data(self):
+        return self.df_semantic
+
+CACHE = DataCleanLocalStorage()
+
+#Obtenemos clean.rita de la RDS
+class GetCleanDataSet(luigi.Task):
+
+    def requires(self):
+        
+        return GetCleanData()
+    
+    def output(self):
+        dir = CURRENT_DIR + "/target/gets_clean_data.txt"
+        return luigi.local_target.LocalTarget(dir)
+
+    def run(self):
+        df_util = init_data_clean_luigi()
+        CACHE.df_semantic = df_util
+
+        z = "ObtieneDatosClean"
+        with self.output().open('w') as output_file:
+            output_file.write(z)
+
+            
+#metadata FE            
+MiLinajeSemantic = Linaje_semantic() 
+
+#Creamos features nuevas
+class GetFEData(luigi.Task):
+    MiLinajeSemantic.fecha =  datetime.now()
+    MiLinajeSemantic.nombre_task = 'GetFEData'
+    MiLinajeSemantic.usuario = getpass.getuser()
+    MiLinajeSemantic.year = datetime.today().year
+    MiLinajeSemantic.month = datetime.today().month
+    MiLinajeSemantic.ip_ec2 =  str(socket.gethostbyname(socket.gethostname()))
+    
+    def requires(self):
+        return GetCleanDataSet()
+    
+    def output(self):
+        dir = CURRENT_DIR + "/target/data_semantic.txt"
+        return luigi.local_target.LocalTarget(dir)
+    
+    def run(self):
+        df_util = init_data_clean_luigi() #CACHE.get_clean_data()
+        CACHE.df_semantic = crear_features(df_util)
+        MiLinajeSemantic.ip_ec2 = df_util.count()
+        MiLinajeSemantic.variables = "findesemana,quincena,dephour,seishoras"
+        MiLinajeSemantic.ruta_s3 = "s3://test-aws-boto/semantic"
+        MiLinajeSemantic.task_status = 'Successful'
+        # Insertamos metadatos a DB
+        semantic_metadata(MiLinajeSemantic.to_upsert())
+        
+        z = "CreaFeaturesDatos"
+        with self.output().open('w') as output_file:
+            output_file.write(z)
+     
+
