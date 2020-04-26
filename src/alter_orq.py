@@ -19,7 +19,7 @@ from zipfile import ZipFile
 
 ###  Imports desde directorio de proyecto dpa_rita
 ## Credenciales
-from ../src import(
+from src import(
 MY_USER,
 MY_PASS,
 MY_HOST,
@@ -154,6 +154,28 @@ class downloadDataS3(luigi.Task):
         # Ruta en donde se guarda el archivo solicitado
         output_path = "Tarea_EL.txt"
         return luigi.LocalTarget(output_path)
+
+
+class Create_RitaLight(PostgresQuery):
+    '''
+    Creamos esquemas y tablas para metadatos, asi como raw, clean y semantic
+    '''
+
+    def requires():
+        return downloadDataS3()
+
+    # Sobreescribe credenciales de constructor de task
+    user = MY_USER
+    password = MY_PASS
+    database = MY_DB
+    host = MY_HOST
+    table = "metadatos"
+
+    # Lee query y lo ejecuta
+    file_dir = "./src/utils/sql/crear_ritalight.sql"
+    query = open(file_dir, "r").read()
+
+
 
 # Preparamamos una clase para reunir los metadatos de la etapa de limpieza de datos
 class Linaje_clean_data():

@@ -1,7 +1,7 @@
 #!/bin/bash
 # Progama que hace la insersion de datos desde data.csv hacia raw.rita
 # Nota: necesita que el archio credentials_psql.txt este presente, el cual
-# contiene los datos que permite la conezion a psql con el RDS
+# contiene los datos que permite la conexion a psql con el RDS
 # user = MY_USER
 # password = MY_PASS
 # db_name = MY_DB
