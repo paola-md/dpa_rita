@@ -18,8 +18,8 @@ import luigi
 import luigi.contrib.s3
 
 # TASKS
-from src.orquestadores.feature_engineering import GetFEData
-
+#from src.orquestadores.feature_engineering import GetFEData
+from tasks.metadatos_semantic import Metadata_Semantic
 # ===============================
 CURRENT_DIR = os.getcwd()
 # ===============================
@@ -32,7 +32,7 @@ class RunModelSimple(luigi.Task):
 	model = "LR"
 
 	def requires(self):
-		return GetFEData()
+		return Metadata_Semantic()
 
 	def output(self):
 		objetivo = self.obj
@@ -43,7 +43,7 @@ class RunModelSimple(luigi.Task):
 		output_path = parse_filename(objetivo, model_name, hyperparams)
 		output_path = "s3://" + str(self.bucname) +  output_path[1:] + ".model.zip"
 
-		return luigi.contrib.s3.S3Target(path=output_path)
+		return #luigi.contrib.s3.S3Target(path=output_path)
 
 	def run(self):
 		objetivo = self.obj
@@ -62,7 +62,7 @@ class RunModel(luigi.Task):
 	model = luigi.Parameter()
 
 	def requires(self):
-		return GetFEData()
+		return Metadata_Semantic()
 
 	def output(self):
 		objetivo = self.obj
@@ -115,7 +115,7 @@ class RunTargetA(luigi.Task):
 	model = luigi.Parameter()
 
 	def requires(self):
-		return GetFEData()
+		return Metadata_Semantic()
 
 	def output(self):
 		objetivo = TARGET_A
@@ -143,7 +143,7 @@ class RunTargetB(luigi.Task):
 	model = luigi.Parameter()
 
 	def requires(self):
-		return GetFEData()
+		return Metadata_Semantic()
 
 	def output(self):
 		objetivo = TARGET_B
@@ -171,7 +171,7 @@ class RunTargetC(luigi.Task):
 	model = luigi.Parameter()
 
 	def requires(self):
-		return GetFEData()
+		return Metadata_Semantic()
 
 	def output(self):
 		objetivo = TARGET_C

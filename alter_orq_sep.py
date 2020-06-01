@@ -88,8 +88,8 @@ from tasks.semantic_type_testing import Semantic_Testing
 from tasks.semantic import GetFEData
 from tasks.metadatos_semantic import Metadata_Semantic
 from tasks.bucket import CreateModelBucket
-from tasks.modeling import RunModel
-from src.orquestadores.modelling import RunAllTargets,\
+#from tasks.modeling import RunModel
+from src.orquestadores.modelling import RunModelSimple, RunModel,\
 RunTargetA, RunTargetB, RunTargetC, RunTargetD
 
 # Listas auxiliares
