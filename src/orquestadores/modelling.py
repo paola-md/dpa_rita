@@ -43,7 +43,7 @@ class RunModelSimple(luigi.Task):
 		output_path = parse_filename(objetivo, model_name, hyperparams)
 		output_path = "s3://" + str(self.bucname) +  output_path[1:] + ".model.zip"
 
-		return #luigi.contrib.s3.S3Target(path=output_path)
+		return luigi.contrib.s3.S3Target(path=output_path)
 
 	def run(self):
 		objetivo = self.obj
